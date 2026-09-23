@@ -80,9 +80,9 @@ namespace StageFlow.Tests
                 Assert.That(runner.GetComponentsInChildren<EnemyMover>(true), Is.Empty);
             }
         }
-        private IEnumerator WaitFor(Func<bool> predicate)
+        private IEnumerator WaitFor(Func<bool> predicate, float timeout = 25f)
         {
-            var deadline = Time.realtimeSinceStartup + 25f;
+            var deadline = Time.realtimeSinceStartup + timeout;
             while (!predicate() && Time.realtimeSinceStartup < deadline) yield return null;
             Assert.That(predicate(), Is.True, "Run transition timed out.");
         }
@@ -384,6 +384,126 @@ namespace StageFlow.Tests
                 Assert.That(arrivals, Is.EqualTo(1), "Arrival must remain a one-shot callback.");
             }
             finally { UnityEngine.Object.Destroy(instance); }
+        }
+
+        [UnityTest]
+        public IEnumerator NormalScenarioCompletesWavesInOrderAcrossMultipleRoutes()
+        {
+            var originalScale = Time.timeScale;
+            try
+            {
+                Assert.That(runner.SelectStage(2), Is.True);
+                var stage = runner.SelectedStage;
+                var originals = SnapshotRuntimeData(stage);
+                Time.timeScale = 8f;
+                Assert.That(runner.StartRun(), Is.True);
+                Assert.That(runner.TotalWaves, Is.EqualTo(4));
+                Assert.That(runner.TotalGroups, Is.EqualTo(12));
+                var highestWave = 1;
+                var sawMultipleRoutes = false;
+                var deadline = Time.realtimeSinceStartup + 30f;
+                while (runner.State != RunState.Completed && Time.realtimeSinceStartup < deadline)
+                {
+                    Assert.That(runner.CurrentWave, Is.GreaterThanOrEqualTo(highestWave));
+                    highestWave = runner.CurrentWave;
+                    var upper = false;
+                    var lower = false;
+                    foreach (var mover in runner.GetComponentsInChildren<EnemyMover>())
+                    {
+                        upper |= mover.transform.position.z < -0.8f;
+                        lower |= mover.transform.position.z > 0.8f;
+                    }
+                    sawMultipleRoutes |= upper && lower;
+                    yield return null;
+                }
+                Assert.That(runner.State, Is.EqualTo(RunState.Completed));
+                Assert.That(highestWave, Is.EqualTo(4));
+                Assert.That(runner.CompletedGroups, Is.EqualTo(12));
+                Assert.That(runner.Spawned, Is.EqualTo(150));
+                Assert.That(runner.Arrived, Is.EqualTo(150));
+                Assert.That(runner.ActiveCount, Is.Zero);
+                Assert.That(sawMultipleRoutes, Is.True);
+                AssertRuntimeDataUnchanged(originals);
+            }
+            finally
+            {
+                Time.timeScale = originalScale;
+                runner.ResetRun();
+            }
+        }
+
+        [UnityTest]
+        public IEnumerator StressResetRestartCompletionAndCompletedRestartAreClean()
+        {
+            var originalScale = Time.timeScale;
+            try
+            {
+                Assert.That(runner.SelectStage(3), Is.True);
+                var originals = SnapshotRuntimeData(runner.SelectedStage);
+                Time.timeScale = 12f;
+                Assert.That(runner.Planned, Is.EqualTo(2400));
+                Assert.That(runner.StartRun(), Is.True);
+                yield return WaitFor(() => runner.ActiveCount >= 100, 15f);
+                runner.ResetRun();
+                yield return null;
+                Assert.That(runner.State, Is.EqualTo(RunState.Idle));
+                Assert.That(runner.Spawned + runner.Arrived + runner.ActiveCount, Is.Zero);
+                Assert.That(runner.GetComponentsInChildren<EnemyMover>(true), Is.Empty);
+
+                Assert.That(runner.StartRun(), Is.True);
+                yield return WaitFor(() => runner.State == RunState.Completed, 45f);
+                Assert.That(runner.Spawned, Is.EqualTo(2400));
+                Assert.That(runner.Arrived, Is.EqualTo(2400));
+                Assert.That(runner.ActiveCount, Is.Zero);
+                Assert.That(runner.CompletedGroups, Is.EqualTo(60));
+                AssertRuntimeDataUnchanged(originals);
+
+                Assert.That(runner.StartRun(), Is.True, "A completed stress scenario must start again.");
+                yield return WaitFor(() => runner.ActiveCount >= 100, 15f);
+                runner.ResetRun();
+                yield return null;
+                Assert.That(runner.GetComponentsInChildren<EnemyMover>(true), Is.Empty);
+                AssertRuntimeDataUnchanged(originals);
+            }
+            finally
+            {
+                Time.timeScale = originalScale;
+                runner.ResetRun();
+            }
+        }
+
+        [UnityTest]
+        public IEnumerator EnemyTraversesEveryRouteWaypointBeforeCompleting()
+        {
+            var instance = new GameObject("Route mover", typeof(EnemyMover));
+            try
+            {
+                var arrived = false;
+                var route = new[] { Vector3.zero, Vector3.right, Vector3.one, new Vector3(2f, 1f, 0f) };
+                instance.GetComponent<EnemyMover>().Initialize(route, 6f, _ => arrived = true, () => Time.deltaTime);
+                yield return WaitFor(() => instance.transform.position.x >= 1f && instance.transform.position.y > 0f, 5f);
+                yield return WaitFor(() => arrived, 5f);
+                Assert.That(Vector3.Distance(instance.transform.position, route[route.Length - 1]), Is.LessThan(0.001f));
+            }
+            finally { UnityEngine.Object.Destroy(instance); }
+        }
+
+        private static Dictionary<UnityEngine.Object, string> SnapshotRuntimeData(StageDefinition stage)
+        {
+            var result = new Dictionary<UnityEngine.Object, string> { [stage] = JsonUtility.ToJson(stage) };
+            foreach (var wave in stage.Waves)
+                foreach (var group in wave.Groups)
+                {
+                    result[group.Enemy] = JsonUtility.ToJson(group.Enemy);
+                    result[group.Route] = JsonUtility.ToJson(group.Route);
+                }
+            return result;
+        }
+
+        private static void AssertRuntimeDataUnchanged(Dictionary<UnityEngine.Object, string> originals)
+        {
+            foreach (var original in originals)
+                Assert.That(JsonUtility.ToJson(original.Key), Is.EqualTo(original.Value));
         }
 #endif
     }
