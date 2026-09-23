@@ -1,0 +1,6 @@
+{
+  "name": "StageFlow.Runtime",
+  "rootNamespace": "StageFlow",
+  "references": [],
+  "includePlatforms": []
+}
