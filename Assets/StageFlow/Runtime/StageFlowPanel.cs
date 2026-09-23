@@ -11,7 +11,7 @@ namespace StageFlow
         private void OnGUI()
         {
             if (runner == null) return;
-            GUILayout.BeginArea(new Rect(16, 16, 300, 470), GUI.skin.box);
+            GUILayout.BeginArea(new Rect(16, 16, 340, 560), GUI.skin.box);
             GUILayout.Label("STAGEFLOW SANDBOX");
             GUILayout.Space(8);
             GUI.enabled = !runner.IsBusy;
@@ -27,10 +27,14 @@ namespace StageFlow
             GUI.enabled = true;
             if (GUILayout.Button("Reset", GUILayout.Height(34))) runner.ResetRun();
             GUILayout.Space(8);
-            GUILayout.Label("Current / Selected: " + (runner.SelectedStage == null ? "None" : runner.SelectedStage.DisplayName));
+            GUILayout.Label("Selected Scenario: " + (runner.SelectedStage == null ? "None" : runner.SelectedStage.DisplayName));
             GUILayout.Label("State: " + runner.State);
-            GUILayout.Label($"Planned: {runner.Planned}    Spawned: {runner.Spawned}");
-            GUILayout.Label($"Active: {runner.ActiveCount}       Arrived: {runner.Arrived}");
+            GUILayout.Label($"Wave: {runner.CurrentWave} / {runner.TotalWaves}");
+            GUILayout.Label($"Completed Groups: {runner.CompletedGroups} / {runner.TotalGroups}");
+            GUILayout.Label($"Planned Enemy: {runner.Planned}");
+            GUILayout.Label($"Spawned Enemy: {runner.Spawned}");
+            GUILayout.Label($"Active Enemy: {runner.ActiveCount}");
+            GUILayout.Label($"Arrived Enemy: {runner.Arrived}");
             if (!string.IsNullOrEmpty(runner.LastError)) GUILayout.Label(runner.LastError);
             GUILayout.EndArea();
         }
